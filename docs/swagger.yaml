@@ -1,0 +1,399 @@
+definitions:
+  config.AppConfig:
+    properties:
+      env:
+        type: string
+      name:
+        type: string
+      version:
+        type: string
+    type: object
+  config.AuthConfig:
+    properties:
+      tokens:
+        items:
+          type: string
+        type: array
+    type: object
+  config.Config:
+    properties:
+      app:
+        $ref: '#/definitions/config.AppConfig'
+      auth:
+        $ref: '#/definitions/config.AuthConfig'
+      database:
+        $ref: '#/definitions/config.DatabaseConfig'
+      development:
+        $ref: '#/definitions/config.DevelopmentConfig'
+      log:
+        $ref: '#/definitions/config.LogConfig'
+      prometheus:
+        $ref: '#/definitions/config.PrometheusConfig'
+      server:
+        $ref: '#/definitions/config.ServerConfig'
+      swagger:
+        $ref: '#/definitions/config.SwaggerConfig'
+      telemetry:
+        $ref: '#/definitions/config.TelemetryConfig'
+    type: object
+  config.DatabaseConfig:
+    properties:
+      connMaxLifetime:
+        type: integer
+      driver:
+        type: string
+      dsn:
+        type: string
+      enable:
+        type: boolean
+      maxIdleConns:
+        type: integer
+      maxOpenConns:
+        type: integer
+    type: object
+  config.DevelopmentConfig:
+    properties:
+      enablePProf:
+        type: boolean
+    type: object
+  config.LogConfig:
+    properties:
+      compress:
+        type: boolean
+      filename:
+        type: string
+      format:
+        type: string
+      level:
+        type: string
+      maxAgeDays:
+        type: integer
+      maxBackups:
+        type: integer
+      maxSizeMB:
+        type: integer
+    type: object
+  config.PrometheusConfig:
+    properties:
+      enable:
+        type: boolean
+      path:
+        type: string
+    type: object
+  config.ServerConfig:
+    properties:
+      host:
+        type: string
+      port:
+        type: integer
+      readTimeout:
+        type: string
+      shutdownTimeout:
+        type: string
+      writeTimeout:
+        type: string
+    type: object
+  config.SwaggerConfig:
+    properties:
+      enable:
+        type: boolean
+      path:
+        type: string
+    type: object
+  config.TelemetryConfig:
+    properties:
+      exporter:
+        type: string
+      insecure:
+        type: boolean
+      otlpendpoint:
+        type: string
+      samplingPercent:
+        type: integer
+      serviceName:
+        type: string
+    type: object
+  model.HealthResponse:
+    properties:
+      service:
+        type: string
+      status:
+        type: string
+      version:
+        type: string
+    type: object
+  model.ResponseBody:
+    properties:
+      code:
+        type: integer
+      data: {}
+      msg:
+        type: string
+    type: object
+  model.StringDataResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        type: string
+      msg:
+        type: string
+    type: object
+  model.StringListResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        items:
+          type: string
+        type: array
+      msg:
+        type: string
+    type: object
+  model.VersionDataResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/model.VersionResponse'
+      msg:
+        type: string
+    type: object
+  model.VersionResponse:
+    properties:
+      BuildTime:
+        type: string
+      GitHash:
+        type: string
+      GoVersion:
+        type: string
+      Version:
+        type: string
+    type: object
+info:
+  contact:
+    name: Liu Haogui
+  description: A concise Gin backend solution with config, db, tracing, metrics and
+    graceful shutdown.
+  title: Ops Container API
+  version: "1.0"
+paths:
+  /api/ops/ping:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+      summary: Ping
+      tags:
+      - ops
+  /api/ops/version:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.VersionDataResponse'
+      summary: Get service version
+      tags:
+      - ops
+  /api/v1/config:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/config.Config'
+      summary: Read current runtime config
+      tags:
+      - system
+  /api/v1/container/{id}:
+    get:
+      parameters:
+      - description: Instance ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: '1: instance containers, 2: init containers, 3: other containers'
+        in: query
+        name: container_type
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ResponseBody'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get container list by instance id
+      tags:
+      - container
+  /api/v1/container/log/{id}:
+    post:
+      parameters:
+      - description: Container ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - default: 100
+        description: Number of log lines
+        in: query
+        name: lines
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StringListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Get container logs
+      tags:
+      - container
+  /api/v1/container/start/{id}:
+    post:
+      parameters:
+      - description: Container ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Start a container
+      tags:
+      - container
+  /api/v1/container/stop/{id}:
+    post:
+      parameters:
+      - description: Container ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Stop a container
+      tags:
+      - container
+  /api/v1/container/tail-log/{id}:
+    get:
+      parameters:
+      - description: Container ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "101":
+          description: Switching Protocols
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/model.StringDataResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Tail container logs over websocket
+      tags:
+      - container
+  /api/v1/health:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.HealthResponse'
+      summary: Health check
+      tags:
+      - system
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

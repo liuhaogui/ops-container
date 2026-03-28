@@ -1,0 +1,9 @@
+.DS_Store
+tmp/
+logs/
+bin/
+vendor/
+coverage.out
+*.swp
+.idea
+*.cast
