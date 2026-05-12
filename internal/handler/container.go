@@ -149,18 +149,33 @@ func (h *ContainerHandler) StartContainer(c *gin.Context) {
 	h.changeContainerState(c, "start")
 }
 
-// GetContainerLog godoc
-// @Summary Get container logs
+// RestartContainer godoc
+// @Summary Restart a container
 // @Tags container
 // @Security ApiKeyAuth
 // @Produce json
 // @Param id path string true "Container ID"
-// @Param lines query int false "Number of log lines" default(100)
+// @Success 200 {object} model.StringDataResponse
+// @Failure 400 {object} model.StringDataResponse
+// @Failure 401 {object} model.StringDataResponse
+// @Failure 500 {object} model.StringDataResponse
+// @Router /api/v1/container/restart/{id} [post]
+func (h *ContainerHandler) RestartContainer(c *gin.Context) {
+	h.changeContainerState(c, "restart")
+}
+
+// GetContainerLog godoc
+// @Summary Get container logs (tail N lines)
+// @Tags container
+// @Security ApiKeyAuth
+// @Produce json
+// @Param id path string true "Container ID"
+// @Param lines query int false "Number of log lines" default(200)
 // @Success 200 {object} model.StringListResponse
 // @Failure 400 {object} model.StringDataResponse
 // @Failure 401 {object} model.StringDataResponse
 // @Failure 500 {object} model.StringDataResponse
-// @Router /api/v1/container/log/{id} [post]
+// @Router /api/v1/container/log/{id} [get]
 func (h *ContainerHandler) GetContainerLog(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "100"))
@@ -169,7 +184,7 @@ func (h *ContainerHandler) GetContainerLog(c *gin.Context) {
 		return
 	}
 	if lines < 1 {
-		lines = 100
+		lines = 200
 	}
 
 	logs, err := h.svc.GetContainerLog(c.Request.Context(), id, lines)
@@ -331,6 +346,8 @@ func (h *ContainerHandler) changeContainerState(c *gin.Context, action string) {
 		err = h.svc.StartContainer(c.Request.Context(), id)
 	case "stop":
 		err = h.svc.StopContainer(c.Request.Context(), id)
+	case "restart":
+		err = h.svc.RestartContainer(c.Request.Context(), id)
 	}
 
 	if err != nil {

@@ -5,24 +5,20 @@ app:
 
 server:
   host: 0.0.0.0
-  port: 8080
+  port: 8081
   read_timeout: 10s
   write_timeout: 10s
   shutdown_timeout: 10s
 
-database:
-  enable: false
-  driver: mysql
-  dsn: root:root@tcp(127.0.0.1:3306)/ops_container?charset=utf8mb4&parseTime=True&loc=Local
-  max_idle_conns: 10
-  max_open_conns: 100
-  conn_max_lifetime: 3600
-
 auth:
-  tokens:
-    - "ccibaM1Z9&I8lQ"
-    - "123"
-    - "456"
+  # HMAC 模式（推荐）：与 ops-api cfg.docker.secret 填同一个字符串即可，无需录入 token。
+  # ops-api 用 HMAC-SHA256(secret, 本机IP) 计算 Authorization，本侧自动验证。
+  secret: ""
+  # my_ip：本机对外暴露给 ops-api 的 IP；留空则自动检测第一个非 loopback IPv4。
+  # 多网卡时建议明确填写，避免检测结果不确定。
+  my_ip: ""
+  # tokens：兜底静态列表，secret 验证通过时不走此列表。可留空。
+  tokens: []
 
 log:
   level: info

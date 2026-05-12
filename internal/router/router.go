@@ -10,7 +10,6 @@ import (
 	"github.com/liuhaogui/ops-container/internal/handler"
 	"github.com/liuhaogui/ops-container/internal/middleware"
 	"github.com/liuhaogui/ops-container/internal/service"
-	"github.com/liuhaogui/ops-container/internal/webui"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -32,10 +31,6 @@ func New(cfgManager *config.Manager, log *zap.Logger, containerService *service.
 	engine.Use(otelgin.Middleware(cfg.Telemetry.ServiceName))
 	engine.Use(middleware.Prometheus())
 
-	if err := webui.RegisterRoutes(engine); err != nil {
-		log.Warn("register web ui routes failed", zap.Error(err))
-	}
-
 	docs.SwaggerInfo.Title = "Ops Container API"
 	docs.SwaggerInfo.Description = "Gin backend solution scaffold."
 	docs.SwaggerInfo.Version = cfg.App.Version
@@ -44,8 +39,12 @@ func New(cfgManager *config.Manager, log *zap.Logger, containerService *service.
 	healthHandler := handler.NewHealthHandler(cfgManager)
 	opsHandler := handler.NewOpsHandler()
 	var containerHandler *handler.ContainerHandler
+	var hostHandler *handler.HostHandler
 	if containerService != nil {
 		containerHandler = handler.NewContainerHandler(containerService, log)
+		// HostService 与 ContainerService 复用同一个 docker client，避免双 dialer。
+		hostService := service.NewHostService(containerService.Docker(), cfg.App.Version)
+		hostHandler = handler.NewHostHandler(hostService)
 	}
 
 	if cfg.Prometheus.Enable {
@@ -82,8 +81,17 @@ func New(cfgManager *config.Manager, log *zap.Logger, containerService *service.
 			protected.GET("/recordings/:name", containerHandler.GetRecording)
 			protected.POST("/container/stop/:id", containerHandler.StopContainer)
 			protected.POST("/container/start/:id", containerHandler.StartContainer)
+			protected.POST("/container/restart/:id", containerHandler.RestartContainer)
+			// 静态日志：ops-api 用 GET，POST 路径保留作历史兼容。
+			protected.GET("/container/log/:id", containerHandler.GetContainerLog)
 			protected.POST("/container/log/:id", containerHandler.GetContainerLog)
+			// 流式日志：ops-api 走 /container/log/{id}/stream；旧 /tail-log/{id} 保留兼容。
+			protected.GET("/container/log/:id/stream", containerHandler.TailContainerLog)
 			protected.GET("/container/tail-log/:id", containerHandler.TailContainerLog)
+
+			if hostHandler != nil {
+				protected.GET("/host/stats", hostHandler.HostStats)
+			}
 		}
 	}
 

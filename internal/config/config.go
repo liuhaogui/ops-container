@@ -47,6 +47,13 @@ type DatabaseConfig struct {
 
 type AuthConfig struct {
 	Tokens []string `mapstructure:"tokens"`
+	// Secret 用于 HMAC-SHA256 自动派生 token：expected = HMAC(secret, my_ip)。
+	// ops-api 侧配置同一个 secret，发请求时自动计算 HMAC(secret, 目标IP) 作为 Authorization。
+	// 配置了 secret 后无需手动配置 tokens。
+	Secret string `mapstructure:"secret"`
+	// MyIP 是本机对外暴露给 ops-api 的 IP（用于 HMAC 验证）。
+	// 留空时自动从 os.Hostname 解析；若多网卡建议明确配置。
+	MyIP string `mapstructure:"my_ip"`
 }
 
 type LogConfig struct {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"sync"
 
 	"github.com/docker/docker/api/types"
@@ -51,6 +52,10 @@ func (s *ContainerService) Close() error {
 	return s.client.Close()
 }
 
+// Docker 暴露内部 docker client，供同进程内其它 service（如 HostService）复用，
+// 避免重复打开 dialer。调用方不要负责 Close —— 由 ContainerService.Close 统一关。
+func (s *ContainerService) Docker() *client.Client { return s.client }
+
 func (s *ContainerService) GetContainerList(ctx context.Context) ([]types.Container, error) {
 	return s.client.ContainerList(ctx, containertypes.ListOptions{All: true})
 }
@@ -65,6 +70,12 @@ func (s *ContainerService) StopContainer(ctx context.Context, id string) error {
 
 func (s *ContainerService) StartContainer(ctx context.Context, id string) error {
 	return s.client.ContainerStart(ctx, id, containertypes.StartOptions{})
+}
+
+// RestartContainer 触发 docker restart：无论容器当前状态都执行重启。
+// 与 stop+start 的语义区别：docker daemon 内部处理停止超时，更接近运维直觉。
+func (s *ContainerService) RestartContainer(ctx context.Context, id string) error {
+	return s.client.ContainerRestart(ctx, id, containertypes.StopOptions{})
 }
 
 func (s *ContainerService) GetContainerLog(ctx context.Context, id string, lines int) ([]string, error) {
@@ -152,11 +163,22 @@ func (s *ContainerService) ExecContainerTerminal(ctx context.Context, id string,
 	defer attach.Close()
 	defer ws.Close()
 
+	// 协议（与 ops-fe-v2 src/components/Terminal/src/Terminal.vue 一致）：
+	//   - 服务端 → 客户端：output / error / exit 均写为 TextMessage 的原始字节，
+	//     前端 xterm 直接 term.write(evt.data)。**不再包 JSON 信封**，否则会把
+	//     `{"type":"output",...}` 这种字符串显示在终端上。
+	//   - 客户端 → 服务端：
+	//     * 非 JSON 的 TextMessage / BinaryMessage：直接当 stdin 写入容器（前端
+	//       `socket.send(data)` 走这条）
+	//     * JSON `{"type":"resize","cols":..,"rows":..}`：调 ContainerExecResize
+	//     * JSON `{"type":"input","data":"..."}`：写 data 到 stdin（兼容老协议）
+	//     * JSON `{"type":"ping",...}` 或其它已知 type：仅做心跳，不下行 docker
+	//     * JSON 但 type 未知或缺失：保守起见**不写 stdin**，避免 ping/控制帧被误写
 	writeMu := &sync.Mutex{}
-	send := func(message ExecWSMessage) error {
+	sendBytes := func(b []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		return ws.WriteJSON(message)
+		return ws.WriteMessage(websocket.TextMessage, b)
 	}
 
 	errCh := make(chan error, 2)
@@ -166,12 +188,13 @@ func (s *ContainerService) ExecContainerTerminal(ctx context.Context, id string,
 		for {
 			n, readErr := attach.Reader.Read(buf)
 			if n > 0 {
+				chunk := buf[:n]
 				if recorder != nil {
-					if err := recorder.RecordOutput(string(buf[:n])); err != nil {
+					if err := recorder.RecordOutput(string(chunk)); err != nil {
 						s.log.Warn("record terminal output failed", zap.String("container_id", id), zap.String("recording", castName), zap.Error(err))
 					}
 				}
-				if err := send(ExecWSMessage{Type: "output", Data: string(buf[:n])}); err != nil {
+				if err := sendBytes(chunk); err != nil {
 					errCh <- err
 					return
 				}
@@ -204,24 +227,29 @@ func (s *ContainerService) ExecContainerTerminal(ctx context.Context, id string,
 				continue
 			}
 
-			var message ExecWSMessage
-			if err := json.Unmarshal(payload, &message); err == nil && message.Type != "" {
-				switch message.Type {
-				case "resize":
-					if err := s.client.ContainerExecResize(ctx, resp.ID, containertypes.ResizeOptions{
-						Height: message.Rows,
-						Width:  message.Cols,
-					}); err != nil {
-						errCh <- err
-						return
+			// 尝试按 JSON 控制帧解析；失败或不是控制帧时再当 stdin 透传。
+			if looksLikeJSONObject(payload) {
+				var message ExecWSMessage
+				if err := json.Unmarshal(payload, &message); err == nil {
+					switch message.Type {
+					case "resize":
+						if err := s.client.ContainerExecResize(ctx, resp.ID, containertypes.ResizeOptions{
+							Height: message.Rows,
+							Width:  message.Cols,
+						}); err != nil {
+							errCh <- err
+							return
+						}
+					case "input":
+						if _, err := attach.Conn.Write([]byte(message.Data)); err != nil {
+							errCh <- err
+							return
+						}
+					default:
+						// "ping" / 未知 type：仅作为心跳/控制帧，不下行 docker。
 					}
-				case "input":
-					if _, err := attach.Conn.Write([]byte(message.Data)); err != nil {
-						errCh <- err
-						return
-					}
+					continue
 				}
-				continue
 			}
 
 			if _, err := attach.Conn.Write(payload); err != nil {
@@ -232,7 +260,7 @@ func (s *ContainerService) ExecContainerTerminal(ctx context.Context, id string,
 	}()
 
 	if err := <-errCh; err != nil {
-		_ = send(ExecWSMessage{Type: "error", Data: err.Error(), Code: -1})
+		_ = sendBytes([]byte("\r\n[error] " + err.Error() + "\r\n"))
 		return err
 	}
 
@@ -241,7 +269,19 @@ func (s *ContainerService) ExecContainerTerminal(ctx context.Context, id string,
 		return err
 	}
 
-	return send(ExecWSMessage{Type: "exit", Code: info.ExitCode})
+	return sendBytes([]byte("\r\n[exit code " + strconv.Itoa(info.ExitCode) + "]\r\n"))
+}
+
+// looksLikeJSONObject 用 payload 第一个非空白字符是否为 '{' 来判断是否是 JSON 对象。
+// 比 json.Unmarshal 失败再 fallback 节省一次反序列化；命中后再做严格解析。
+func looksLikeJSONObject(payload []byte) bool {
+	for _, b := range payload {
+		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
+			continue
+		}
+		return b == '{'
+	}
+	return false
 }
 
 func scanLogs(reader io.Reader) ([]string, error) {
