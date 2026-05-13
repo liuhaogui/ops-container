@@ -5,7 +5,7 @@ app:
 
 server:
   host: 0.0.0.0
-  port: 8081
+  port: 9101
   read_timeout: 10s
   write_timeout: 10s
   shutdown_timeout: 10s
@@ -16,12 +16,12 @@ auth:
   secret: ""
   # my_ip：本机对外暴露给 ops-api 的 IP；留空则自动检测第一个非 loopback IPv4。
   # 多网卡时建议明确填写，避免检测结果不确定。
-  my_ip: ""
+  my_ip: "127.0.0.1"
   # tokens：兜底静态列表，secret 验证通过时不走此列表。可留空。
   tokens: []
 
 log:
-  level: info
+  level: debug
   format: console
   filename: logs/app.log
   max_size_mb: 100

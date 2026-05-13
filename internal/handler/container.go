@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/liuhaogui/ops-container/internal/response"
@@ -78,7 +77,7 @@ func (h *ContainerHandler) ListContainers(c *gin.Context) {
 // @Router /api/v1/container/{id} [get]
 func (h *ContainerHandler) GetContainerList(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
-	containerType, _ := strconv.Atoi(c.DefaultQuery("container_type", "1"))
+	_, _ = strconv.Atoi(c.DefaultQuery("container_type", "1")) // TODO: 暂时不用，label 过滤注释后保留参数解析
 	if id == "" {
 		c.JSON(http.StatusBadRequest, response.JSON(response.ParamError, "", ""))
 		return
@@ -91,32 +90,33 @@ func (h *ContainerHandler) GetContainerList(c *gin.Context) {
 		return
 	}
 
-	res := make([]types.Container, 0)
-	initService := make([]types.Container, 0)
-	otherService := make([]types.Container, 0)
-	for _, item := range list {
-		if len(item.Labels) == 0 {
-			continue
-		}
-		if item.Labels["instance_init"] == "true" {
-			initService = append(initService, item)
-			continue
-		}
-		if item.Labels["instance_id"] == id {
-			res = append(res, item)
-			continue
-		}
-		otherService = append(otherService, item)
-	}
-
-	switch containerType {
-	case 2:
-		c.JSON(http.StatusOK, response.JSON(response.Success, "", initService))
-	case 3:
-		c.JSON(http.StatusOK, response.JSON(response.Success, "", otherService))
-	default:
-		c.JSON(http.StatusOK, response.JSON(response.Success, "", res))
-	}
+	// TODO: 暂时注释 label 过滤，待容器部署后补齐 instance_id label 再恢复
+	// res := make([]types.Container, 0)
+	// initService := make([]types.Container, 0)
+	// otherService := make([]types.Container, 0)
+	// for _, item := range list {
+	// 	if len(item.Labels) == 0 {
+	// 		continue
+	// 	}
+	// 	if item.Labels["instance_init"] == "true" {
+	// 		initService = append(initService, item)
+	// 		continue
+	// 	}
+	// 	if item.Labels["instance_id"] == id {
+	// 		res = append(res, item)
+	// 		continue
+	// 	}
+	// 	otherService = append(otherService, item)
+	// }
+	// switch containerType {
+	// case 2:
+	// 	c.JSON(http.StatusOK, response.JSON(response.Success, "", initService))
+	// case 3:
+	// 	c.JSON(http.StatusOK, response.JSON(response.Success, "", otherService))
+	// default:
+	// 	c.JSON(http.StatusOK, response.JSON(response.Success, "", res))
+	// }
+	c.JSON(http.StatusOK, response.JSON(response.Success, "", list))
 }
 
 // StopContainer godoc
