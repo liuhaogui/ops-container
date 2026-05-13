@@ -15,6 +15,7 @@ type Config struct {
 	Server      ServerConfig      `mapstructure:"server"`
 	Database    DatabaseConfig    `mapstructure:"database"`
 	Auth        AuthConfig        `mapstructure:"auth"`
+	OpsAPI      OpsAPIConfig      `mapstructure:"ops_api"`
 	Log         LogConfig         `mapstructure:"log"`
 	Telemetry   TelemetryConfig   `mapstructure:"telemetry"`
 	Prometheus  PrometheusConfig  `mapstructure:"prometheus"`
@@ -47,13 +48,15 @@ type DatabaseConfig struct {
 
 type AuthConfig struct {
 	Tokens []string `mapstructure:"tokens"`
-	// Secret 用于 HMAC-SHA256 自动派生 token：expected = HMAC(secret, my_ip)。
-	// ops-api 侧配置同一个 secret，发请求时自动计算 HMAC(secret, 目标IP) 作为 Authorization。
-	// 配置了 secret 后无需手动配置 tokens。
-	Secret string `mapstructure:"secret"`
 	// MyIP 是本机对外暴露给 ops-api 的 IP（用于 HMAC 验证）。
 	// 留空时自动从 os.Hostname 解析；若多网卡建议明确配置。
 	MyIP string `mapstructure:"my_ip"`
+}
+
+type OpsAPIConfig struct {
+	// URL ops-api 地址，用于启动时拉取本机 secret（如 http://ops-api:8080）
+	URL     string        `mapstructure:"url"`
+	Timeout time.Duration `mapstructure:"timeout"`
 }
 
 type LogConfig struct {
@@ -153,7 +156,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.max_idle_conns", 10)
 	v.SetDefault("database.max_open_conns", 100)
 	v.SetDefault("database.conn_max_lifetime", 3600)
-	v.SetDefault("auth.tokens", []string{"6385d360ad7a4a55aa33b8b96bb914e1", "123", "456"})
+	v.SetDefault("auth.tokens", []string{})
+	v.SetDefault("ops_api.url", "")
+	v.SetDefault("ops_api.timeout", "10s")
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "console")
 	v.SetDefault("log.filename", "logs/app.log")

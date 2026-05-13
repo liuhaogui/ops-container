@@ -18,12 +18,13 @@ import (
 )
 
 type Application struct {
-	cfgManager *config.Manager
-	logger     *zap.Logger
-	db         *storage.Database
-	container  *service.ContainerService
-	tracer     *sdktrace.TracerProvider
-	server     *server.HTTPServer
+	cfgManager   *config.Manager
+	logger       *zap.Logger
+	db           *storage.Database
+	container    *service.ContainerService
+	tracer       *sdktrace.TracerProvider
+	server       *server.HTTPServer
+	secretHolder *SecretHolder
 }
 
 func NewApplication() (*Application, error) {
@@ -59,16 +60,24 @@ func NewApplication() (*Application, error) {
 		logger.Warn("init docker client failed, container api may be unavailable", zap.Error(err))
 	}
 
-	engine := router.New(cfgManager, logger, containerService)
+	// 启动时从 ops-api 拉取本机 secret，纯内存持有，不落盘
+	// ops_api.url 已配置时拉取失败直接拒绝启动
+	secretHolder := NewSecretHolder(cfgManager, logger)
+	if err := FetchAndHold(cfg, secretHolder, logger); err != nil {
+		return nil, fmt.Errorf("startup secret fetch failed: %w", err)
+	}
+
+	engine := router.New(cfgManager, logger, containerService, secretHolder)
 	httpServer := server.New(cfg.Server, cfg.Development, engine, logger)
 
 	return &Application{
-		cfgManager: cfgManager,
-		logger:     logger,
-		db:         db,
-		container:  containerService,
-		tracer:     tracerProvider,
-		server:     httpServer,
+		cfgManager:   cfgManager,
+		logger:       logger,
+		db:           db,
+		container:    containerService,
+		tracer:       tracerProvider,
+		server:       httpServer,
+		secretHolder: secretHolder,
 	}, nil
 }
 

@@ -14,23 +14,33 @@ import (
 	"github.com/liuhaogui/ops-container/internal/response"
 )
 
-// TokenAuth 鉴权中间件，支持两种模式（优先级从高到低）：
+// SecretGetter 提供运行时动态 secret 及失败计数能力。
+type SecretGetter interface {
+	Get() string
+	RecordFailure()
+	RecordSuccess()
+}
+
+// TokenAuth 鉴权中间件，优先级：
+//  1. 动态 secret（ops-api 启动时拉取，每台机器独立随机）：HMAC-SHA256(secret, my_ip)
+//  2. 静态 secret（auth.secret，config 兜底）
+//  3. 静态 token 列表（auth.tokens）
+//  4. 无任何鉴权配置 → 放行（开发模式）
 //
-//  1. HMAC 模式（推荐）：配置 auth.secret + auth.my_ip，
-//     ops-api 用 HMAC-SHA256(secret, my_ip) 计算 token，
-//     本侧用同样算法验证，双方不存储 token。
-//
-//  2. 静态 token 列表：配置 auth.tokens，
-//     逐一对比 Authorization header。兜底兼容旧部署。
-//
-//  两种模式可同时配置：secret 验证通过即放行，不再检查 tokens。
-func TokenAuth(cfgManager *config.Manager) gin.HandlerFunc {
+// 连续 3 次 token 验证失败时，自动触发从 ops-api 重新拉取 secret。
+func TokenAuth(cfgManager *config.Manager, secretHolder SecretGetter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		cfg := cfgManager.Current()
 
-		// 没有任何鉴权配置 → 放行（开发模式）
-		if len(cfg.Auth.Tokens) == 0 && strings.TrimSpace(cfg.Auth.Secret) == "" {
-			c.Next()
+		dynamicSecret := ""
+		if secretHolder != nil {
+			dynamicSecret = secretHolder.Get()
+		}
+
+		// 无任何鉴权配置 → 拒绝（不允许无鉴权运行）
+		if len(cfg.Auth.Tokens) == 0 && dynamicSecret == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized,
+				response.JSON(response.NoAuth, "no auth configured", ""))
 			return
 		}
 
@@ -41,17 +51,20 @@ func TokenAuth(cfgManager *config.Manager) gin.HandlerFunc {
 			return
 		}
 
-		// 优先走 HMAC 验证
-		if secret := strings.TrimSpace(cfg.Auth.Secret); secret != "" {
-			myIP := resolveMyIP(cfg.Auth.MyIP)
-			expected := deriveToken(secret, myIP)
-			if hmac.Equal([]byte(token), []byte(expected)) {
+		myIP := resolveMyIP(cfg.Auth.MyIP)
+
+		// 1. 动态 secret（ops-api 拉取，每台独立随机）
+		if dynamicSecret != "" {
+			if hmac.Equal([]byte(token), []byte(deriveToken(dynamicSecret, myIP))) {
+				if secretHolder != nil {
+					secretHolder.RecordSuccess()
+				}
 				c.Next()
 				return
 			}
 		}
 
-		// 兜底：静态 token 列表
+		// 2. 静态 token 列表
 		for _, allowed := range cfg.Auth.Tokens {
 			if token == strings.TrimSpace(allowed) {
 				c.Next()
@@ -59,6 +72,10 @@ func TokenAuth(cfgManager *config.Manager) gin.HandlerFunc {
 			}
 		}
 
+		// 验证失败：计数，达阈值触发重新拉取 secret
+		if secretHolder != nil {
+			secretHolder.RecordFailure()
+		}
 		c.AbortWithStatusJSON(http.StatusUnauthorized,
 			response.JSON(response.NoAuth, "invalid token", ""))
 	}

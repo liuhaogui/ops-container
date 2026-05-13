@@ -11,14 +11,17 @@ server:
   shutdown_timeout: 10s
 
 auth:
-  # HMAC 模式（推荐）：与 ops-api cfg.docker.secret 填同一个字符串即可，无需录入 token。
-  # ops-api 用 HMAC-SHA256(secret, 本机IP) 计算 Authorization，本侧自动验证。
-  secret: ""
   # my_ip：本机对外暴露给 ops-api 的 IP；留空则自动检测第一个非 loopback IPv4。
   # 多网卡时建议明确填写，避免检测结果不确定。
   my_ip: "127.0.0.1"
-  # tokens：兜底静态列表，secret 验证通过时不走此列表。可留空。
+  # tokens：静态 token 列表，无 ops_api.url 时可用于临时鉴权。
   tokens: []
+
+# ops-api 地址，容器启动时从此拉取本机 secret（内存持有，不落盘）
+# 填写后 secret 由 ops-api 按 IP 独立分配，无需手动配置
+ops_api:
+  url: "http://127.0.0.1:8080"
+  timeout: 10s
 
 log:
   level: debug

@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func New(cfgManager *config.Manager, log *zap.Logger, containerService *service.ContainerService) *gin.Engine {
+func New(cfgManager *config.Manager, log *zap.Logger, containerService *service.ContainerService, secretHolder middleware.SecretGetter) *gin.Engine {
 	cfg := cfgManager.Current()
 
 	if cfg.App.Env == "prod" {
@@ -72,7 +72,7 @@ func New(cfgManager *config.Manager, log *zap.Logger, containerService *service.
 	}
 
 	if containerHandler != nil {
-		protected := engine.Group("/api/v1", middleware.TokenAuth(cfgManager))
+		protected := engine.Group("/api/v1", middleware.TokenAuth(cfgManager, secretHolder))
 		{
 			protected.GET("/containers", containerHandler.ListContainers)
 			protected.GET("/container/:id", containerHandler.GetContainerList)
