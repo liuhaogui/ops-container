@@ -13,7 +13,6 @@ import (
 type Config struct {
 	App         AppConfig         `mapstructure:"app"`
 	Server      ServerConfig      `mapstructure:"server"`
-	Database    DatabaseConfig    `mapstructure:"database"`
 	Auth        AuthConfig        `mapstructure:"auth"`
 	OpsAPI      OpsAPIConfig      `mapstructure:"ops_api"`
 	Log         LogConfig         `mapstructure:"log"`
@@ -35,15 +34,6 @@ type ServerConfig struct {
 	ReadTimeout     time.Duration `mapstructure:"read_timeout" swaggertype:"string"`
 	WriteTimeout    time.Duration `mapstructure:"write_timeout" swaggertype:"string"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout" swaggertype:"string"`
-}
-
-type DatabaseConfig struct {
-	Enable          bool   `mapstructure:"enable"`
-	Driver          string `mapstructure:"driver"`
-	DSN             string `mapstructure:"dsn"`
-	MaxIdleConns    int    `mapstructure:"max_idle_conns"`
-	MaxOpenConns    int    `mapstructure:"max_open_conns"`
-	ConnMaxLifetime int    `mapstructure:"conn_max_lifetime"`
 }
 
 type AuthConfig struct {
@@ -151,11 +141,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.read_timeout", "10s")
 	v.SetDefault("server.write_timeout", "10s")
 	v.SetDefault("server.shutdown_timeout", "10s")
-	v.SetDefault("database.driver", "mysql")
-	v.SetDefault("database.enable", false)
-	v.SetDefault("database.max_idle_conns", 10)
-	v.SetDefault("database.max_open_conns", 100)
-	v.SetDefault("database.conn_max_lifetime", 3600)
 	v.SetDefault("auth.tokens", []string{})
 	v.SetDefault("ops_api.url", "")
 	v.SetDefault("ops_api.timeout", "10s")

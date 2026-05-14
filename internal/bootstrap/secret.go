@@ -94,12 +94,12 @@ func FetchAndHold(cfg config.Config, holder *SecretHolder, log *zap.Logger) erro
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("fetch container secret: request to %s failed: %w", url, err)
+		return fmt.Errorf("无法连接服务端 %s，请检查服务端是否正常运行：%w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch container secret: ops-api returned %d (IP not registered?)", resp.StatusCode)
+		return fmt.Errorf("服务端返回异常状态 %d，请检查服务端状态或先在服务端录入本机 IP（%s）", resp.StatusCode, url)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -118,7 +118,7 @@ func FetchAndHold(cfg config.Config, holder *SecretHolder, log *zap.Logger) erro
 
 	secret := strings.TrimSpace(payload.Data.Secret)
 	if secret == "" {
-		return fmt.Errorf("fetch container secret: ops-api returned empty secret")
+		return fmt.Errorf("服务端返回数据异常，请检查服务端状态或先在服务端录入本机 IP（%s）", url)
 	}
 
 	holder.set(secret)

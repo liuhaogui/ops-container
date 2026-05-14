@@ -11,7 +11,6 @@ import (
 	"github.com/liuhaogui/ops-container/internal/router"
 	"github.com/liuhaogui/ops-container/internal/service"
 	"github.com/liuhaogui/ops-container/internal/server"
-	"github.com/liuhaogui/ops-container/internal/storage"
 	"github.com/liuhaogui/ops-container/internal/telemetry"
 	"go.uber.org/zap"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -20,7 +19,6 @@ import (
 type Application struct {
 	cfgManager   *config.Manager
 	logger       *zap.Logger
-	db           *storage.Database
 	container    *service.ContainerService
 	tracer       *sdktrace.TracerProvider
 	server       *server.HTTPServer
@@ -50,11 +48,6 @@ func NewApplication() (*Application, error) {
 		return nil, fmt.Errorf("init tracer: %w", err)
 	}
 
-	db, err := storage.NewDatabase(cfg.Database, logger)
-	if err != nil {
-		return nil, fmt.Errorf("init database: %w", err)
-	}
-
 	containerService, err := service.NewContainerService(logger)
 	if err != nil {
 		logger.Warn("init docker client failed, container api may be unavailable", zap.Error(err))
@@ -73,7 +66,6 @@ func NewApplication() (*Application, error) {
 	return &Application{
 		cfgManager:   cfgManager,
 		logger:       logger,
-		db:           db,
 		container:    containerService,
 		tracer:       tracerProvider,
 		server:       httpServer,
@@ -105,10 +97,6 @@ func (a *Application) shutdown(ctx context.Context) error {
 
 	if err := a.server.Shutdown(ctx, cfg.Server.ShutdownTimeout); err != nil {
 		return fmt.Errorf("shutdown server: %w", err)
-	}
-
-	if err := a.db.Close(); err != nil {
-		a.logger.Warn("close database failed", zap.Error(err))
 	}
 
 	if err := a.container.Close(); err != nil {
